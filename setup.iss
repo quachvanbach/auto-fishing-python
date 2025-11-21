@@ -2,11 +2,11 @@
 
 [Setup]
 AppName=Auto Clicker
-AppVersion=1.1.2
+AppVersion=1.1.3
 DefaultDirName={commonpf}\Auto Clicker
 DefaultGroupName=Auto Clicker
 OutputDir=Output
-OutputBaseFilename=AutoClicker_Installer_v1_1_2
+OutputBaseFilename=AutoClicker_Installer_v1_1_3
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

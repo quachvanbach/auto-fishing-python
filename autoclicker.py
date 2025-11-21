@@ -14,8 +14,7 @@ status_callback = None
 color_callback = None
 log_save_callback = None
 
-# NGƯỠNG CLICK MỚI
-NGUONG_CLICK = 5
+# XÓA HẰNG SỐ NGUONG_CLICK. Bây giờ nó là tham số truyền vào từ UI
 
 
 def set_callbacks(status_cb, color_cb, log_save_cb):
@@ -46,7 +45,8 @@ def sleep_may_stop(seconds):
     return True
 
 
-def watch_pixel(rel_x, rel_y, window_title, radius):
+# THÊM THAM SỐ threshold
+def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
     global running, selected_window_rect
 
     while running:
@@ -65,8 +65,10 @@ def watch_pixel(rel_x, rel_y, window_title, radius):
             rel_x = int(rel_x)
             rel_y = int(rel_y)
             radius = int(radius)
+            # threshold đã được validate trong controller, nhưng nên ép kiểu float
+            threshold = float(threshold)
         except Exception:
-            update_status("Lỗi: tọa độ hoặc bán kính không hợp lệ")
+            update_status("Lỗi: tham số không hợp lệ!")
             running = False
             break
 
@@ -83,7 +85,7 @@ def watch_pixel(rel_x, rel_y, window_title, radius):
         if color_callback:
             color_callback(old_hex, "")
 
-        update_status(f"Auto đang bật tại ({rel_x},{rel_y})", old_hex)
+        update_status(f"Auto đang bật tại ({rel_x},{rel_y}) | Ngưỡng: {threshold}", old_hex)
 
         while running:
             # Kiểm tra lại cửa sổ trong vòng lặp nhỏ
@@ -106,17 +108,17 @@ def watch_pixel(rel_x, rel_y, window_title, radius):
 
                 new_hex = rgb_to_hex(new_surrounding_pixels[0])
 
-                # BƯỚC MỚI: TÍNH KHOẢNG CÁCH MÀU
+                # TÍNH KHOẢNG CÁCH MÀU
                 khoang_cach_mau = tinh_khoang_cach_weighted_rgb(old_hex, new_hex)
 
                 # Gửi màu cũ (trước click) và màu mới (sau click) về UI (Dù có click hay không)
                 if color_callback:
                     color_callback(old_hex, new_hex)
 
-                update_status(f"Phát hiện thay đổi! KC={khoang_cach_mau:.2f}", new_hex)
+                update_status(f"Phát hiện thay đổi! KC={khoang_cach_mau:.2f} | Ngưỡng: {threshold}", new_hex)
 
                 # CHỈ CLICK KHI KHOẢNG CÁCH > NGƯỠNG
-                if khoang_cach_mau > NGUONG_CLICK:
+                if khoang_cach_mau > threshold: # SỬ DỤNG THAM SỐ THRESHOLD
 
                     try:
                         pyautogui.click(abs_x, abs_y)
@@ -151,14 +153,13 @@ def watch_pixel(rel_x, rel_y, window_title, radius):
 
                 else:
                     # Nếu khoảng cách màu NHỎ (chỉ thay đổi nhẹ)
-                    print(f"[AutoClicker] KHÔNG CLICK. {old_hex} <=> {new_hex} KC={khoang_cach_mau:.2f} <= {NGUONG_CLICK}")
+                    print(f"[AutoClicker] KHÔNG CLICK. KC={khoang_cach_mau:.2f} <= {threshold}")
 
                     # Dừng nhẹ để tránh vòng lặp quá nhanh
                     time.sleep(0.5)
 
 
                 # Sau khi xử lý xong (click hoặc không), cần cập nhật lại trạng thái màu ban đầu
-                # Gửi lại màu hiện tại và reset màu sau thay đổi (dùng old_hex đã được cập nhật/hoặc giữ nguyên)
                 current_hex_after_check = rgb_to_hex(old_colors[0])
                 if color_callback:
                     color_callback(current_hex_after_check, "")
@@ -174,7 +175,8 @@ def watch_pixel(rel_x, rel_y, window_title, radius):
 # HÀM BÊN NGOÀI (CẦN EXPORT CHO CONTROLLER)
 # =====================================
 
-def start_watching(rel_x, rel_y, window_title, radius):
+# THÊM THAM SỐ threshold
+def start_watching(rel_x, rel_y, window_title, radius, threshold):
     """Bắt đầu luồng theo dõi pixel và click"""
     global running
 
@@ -183,8 +185,9 @@ def start_watching(rel_x, rel_y, window_title, radius):
         return
 
     running = True
-    update_status(f"Auto đang bật tại ({rel_x},{rel_y})", "#ccffcc")
-    threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, radius), daemon=True).start()
+    update_status(f"Auto đang bật tại ({rel_x},{rel_y}) | Ngưỡng: {threshold}", "#ccffcc")
+    # TRUYỀN THAM SỐ THRESHOLD VÀO LUỒNG
+    threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, radius, threshold), daemon=True).start()
 
 
 def stop_watching():
@@ -195,7 +198,7 @@ def stop_watching():
 
 
 # =====================================
-# HÀM CHỌN TỌA ĐỘ
+# HÀM CHỌN TỌA ĐỘ (Đã bị thiếu, cần bổ sung lại)
 # =====================================
 waiting_for_click = False
 

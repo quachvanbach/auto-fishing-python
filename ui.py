@@ -31,6 +31,7 @@ combo_window = None
 entry_x = None
 entry_y = None
 entry_radius = None
+entry_threshold = None  # BIẾN MỚI CHO NGƯỠNG MÀU
 status_label = None
 
 # BIẾN MỚI THAY THẾ color_label
@@ -52,7 +53,6 @@ def update_status(text, color=None):
     global status_label, root
     if status_label:
         status_label.config(text=text)
-    # Không dùng color_label nữa, màu được quản lý bởi update_color_labels
 
 
 def set_coordinate_entries(rel_x, rel_y):
@@ -126,8 +126,6 @@ def update_color_labels(old_hex, new_hex):
         color_hex_after.config(state=tk.DISABLED)
 
 
-# HẾT HÀM MỚI
-
 # =====================================
 # HÀM XỬ LÝ SỰ KIỆN UI
 # =====================================
@@ -153,7 +151,8 @@ def on_start_click():
     x = entry_x.get()
     y = entry_y.get()
     radius = entry_radius.get()
-    handle_start(title, x, y, radius)
+    threshold = entry_threshold.get()  # LẤY NGƯỠNG TỪ INPUT MỚI
+    handle_start(title, x, y, radius, threshold)  # TRUYỀN THÊM THRESHOLD
 
 
 def on_stop_click():
@@ -260,7 +259,7 @@ def show_about():
     scrollbar.pack(side="right", fill="y")
 
     # --- Nội dung ---
-    title_text = "Auto Clicker v1.1.1\nTác giả: Kevin Quach\n"
+    title_text = "Auto Clicker v1.1.2\nTác giả: Kevin Quach\n"
     title_label = tk.Label(
         scroll_frame,
         text=title_text,
@@ -274,7 +273,10 @@ def show_about():
     separator.pack(fill="x", padx=10, pady=(0, 5))
 
     body_text = ("- Sửa lại vị trí lưu file log.\n"
-                 "- Thêm tính năng chọn số điểm ảnh theo dõi.")
+                 "- Thêm tính năng chọn số điểm ảnh theo dõi.\n"
+                 "- Cải thiện tính năng phát hiện thay đổi màu sắc.\n"
+                 "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi.\n"
+                 "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.")
     body_label = tk.Label(scroll_frame, text=body_text, justify="left",
                           anchor="nw", wraplength=380)
     body_label.pack(fill="both", expand=True, padx=5, pady=(0, 10))
@@ -288,7 +290,7 @@ def show_about():
 
 def start_ui():
     """Khởi tạo và chạy giao diện chính"""
-    global root, combo_window, entry_x, entry_y, entry_radius, status_label, tree
+    global root, combo_window, entry_x, entry_y, entry_radius, entry_threshold, status_label, tree
     global color_canvas_before, color_hex_before, color_canvas_after, color_hex_after  # Biến mới
 
     root = tk.Tk()
@@ -333,10 +335,27 @@ def start_ui():
     entry_y = tk.Entry(root)
     entry_y.pack(fill="x", pady=2)
 
-    tk.Label(root, text="Bán kính kiểm tra pixel (mặc định: 0):").pack(anchor="w")
-    entry_radius = tk.Entry(root, width=5)
+    # KHUNG CHỨA BÁN KÍNH VÀ NGƯỠNG MÀU
+    frame_params = tk.Frame(root)
+    frame_params.pack(fill="x", pady=5)
+
+    # KHỐI 1: BÁN KÍNH KIỂM TRA PIXEL
+    frame_radius = tk.Frame(frame_params)
+    frame_radius.pack(side=tk.LEFT, fill="x", expand=True)
+
+    tk.Label(frame_radius, text="Bán kính kiểm tra pixel:").pack(anchor="w")
+    entry_radius = tk.Entry(frame_radius, width=5)
     entry_radius.insert(0, "0")
-    entry_radius.pack(pady=2, anchor="w")
+    entry_radius.pack(pady=2, anchor="w", fill="x")
+
+    # KHỐI 2: NGƯỠNG KHOẢNG CÁCH MÀU (THÊM MỚI)
+    frame_threshold = tk.Frame(frame_params)
+    frame_threshold.pack(side=tk.LEFT, fill="x", expand=True, padx=(10, 0))
+
+    tk.Label(frame_threshold, text="Ngưỡng khoảng cách màu:").pack(anchor="w")
+    entry_threshold = tk.Entry(frame_threshold, width=5)
+    entry_threshold.insert(0, "10")  # Giá trị mặc định là 50
+    entry_threshold.pack(pady=2, anchor="w", fill="x")
 
     tk.Button(root, text="Chọn vị trí (Ctrl + F10)", command=on_pick_click).pack(pady=5, fill="x")
 
@@ -353,7 +372,7 @@ def start_ui():
     status_label = tk.Label(root, text="Auto Clicker tạm dừng", anchor="w")
     status_label.pack(fill="x", pady=(5, 0))
 
-    # BẮT ĐẦU PHẦN HIỂN THỊ MÀU MỚI (THAY THẾ color_label cũ)
+    # BẮT ĐẦU PHẦN HIỂN THỊ MÀU
     frame_colors = tk.Frame(root)
     frame_colors.pack(fill="x", pady=(5, 5))
 

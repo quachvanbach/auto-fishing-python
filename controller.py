@@ -1,5 +1,6 @@
 import pygetwindow as gw
 from utils.file_io import save_position_to_log, load_log_data, overwrite_log_data, clear_log_file
+# Thêm 'start_watching_with_threshold' để xử lý tham số mới
 from autoclicker import start_watching as ac_start, stop_watching as ac_stop, enable_pick_mode as ac_pick, set_callbacks
 from tkinter import messagebox
 from datetime import datetime
@@ -15,11 +16,11 @@ def init_controller(update_status_cb, update_colors_cb, load_list_cb, set_coords
     """Thiết lập các hàm callback từ UI và Autoclicker"""
     global ui_callbacks
     ui_callbacks['update_status'] = update_status_cb
-    ui_callbacks['update_colors'] = update_colors_cb  # ĐÃ SỬA: Tên callback màu mới
+    ui_callbacks['update_colors'] = update_colors_cb
     ui_callbacks['load_list'] = load_list_cb
     ui_callbacks['set_coords'] = set_coords_cb
 
-    # Thiết lập callbacks cho Autoclicker. Truyền update_colors_cb
+    # Thiết lập callbacks cho Autoclicker.
     set_callbacks(update_status_cb, update_colors_cb, handle_new_coordinates_from_pick)
 
 
@@ -112,7 +113,7 @@ def delete_all_log():
 # =====================================
 # HÀM BÊN NGOÀI GỌI TỪ UI
 # =====================================
-def handle_start(window_title, x_str, y_str, radius_str):
+def handle_start(window_title, x_str, y_str, radius_str, threshold_str):  # NHẬN THÊM THRESHOLD
     """Xử lý nút Start"""
 
     if not window_title:
@@ -134,11 +135,20 @@ def handle_start(window_title, x_str, y_str, radius_str):
         messagebox.showerror("Lỗi", "Bán kính phải là số nguyên không âm!")
         return
 
+    try:
+        threshold = float(threshold_str)  # Ngưỡng màu có thể là số thập phân
+        if threshold < 0:
+            raise ValueError
+    except:
+        messagebox.showerror("Lỗi", "Ngưỡng khoảng cách màu phải là số không âm!")
+        return
+
     # Lưu lại vị trí nếu khác lần cuối đã lưu
     if last_saved_coords != (rel_x, rel_y):
         save_position(window_title, rel_x, rel_y)
 
-    ac_start(rel_x, rel_y, window_title, radius)
+    # TRUYỀN THÊM THRESHOLD CHO AUTOCLICKER
+    ac_start(rel_x, rel_y, window_title, radius, threshold)
 
 
 def handle_stop():
