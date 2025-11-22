@@ -3,8 +3,9 @@ import threading
 import time
 import keyboard
 import pygetwindow as gw
-from utils.coords import clamp_coords, get_surrounding_pixels, rgb_to_hex, tinh_khoang_cach_weighted_rgb
-from utils.file_io import log_activity  # IMPORT HÀM MỚI
+# CHỈ IMPORT HÀM CẦN THIẾT
+from utils.coords import clamp_coords, rgb_to_hex, tinh_khoang_cach_weighted_rgb, get_single_pixel_color
+from utils.file_io import log_activity
 from tkinter import messagebox
 
 # Biến toàn cục để kiểm soát
@@ -41,20 +42,22 @@ def update_status(text, color=None):
 def sleep_may_stop(seconds):
     """Dừng luồng an toàn, kiểm tra biến 'running'"""
     global running
-    steps = int(seconds / 0.05) if seconds > 0 else 0
+    # GIẢM ĐỘ TRỄ kiểm tra xuống 0.01s
+    steps = int(seconds / 0.01) if seconds > 0 else 0
     for _ in range(steps):
         if not running:
             return False
-        time.sleep(0.05)
+        time.sleep(0.01)  # TỐI ƯU
     return True
 
 
-# THÊM THAM SỐ threshold
-def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
+# BỎ THAM SỐ RADIUS
+def watch_pixel(rel_x, rel_y, window_title, threshold):
     global running, selected_window_rect, last_action_time
 
     # Khởi tạo thời điểm hành động đầu tiên
     last_action_time = time.time()
+    # Bỏ radius trong log
     log_activity(f"START theo dõi. Cửa sổ: {window_title}, Tọa độ: ({rel_x},{rel_y}), Ngưỡng: {threshold}")
 
     while running:
@@ -73,12 +76,11 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
         try:
             rel_x = int(rel_x)
             rel_y = int(rel_y)
-            radius = int(radius)
             # threshold đã được validate trong controller, nhưng nên ép kiểu float
             threshold = float(threshold)
         except Exception:
             update_status("Lỗi: tham số không hợp lệ!")
-            log_activity("LỖI KHỞI TẠO: Tọa độ/Bán kính/Ngưỡng không phải là số.")
+            log_activity("LỖI KHỞI TẠO: Tọa độ/Ngưỡng không phải là số.")
             running = False
             break
 
@@ -87,9 +89,8 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
         abs_x, abs_y = clamp_coords(abs_x, abs_y)
 
         # Lấy màu pixel khởi tạo
-        surrounding_pixels = get_surrounding_pixels(abs_x, abs_y, radius=radius)
-        old_colors = surrounding_pixels
-        old_hex = rgb_to_hex(old_colors[0])
+        old_color_rgb = get_single_pixel_color(abs_x, abs_y)  # Dùng hàm lấy 1 pixel
+        old_hex = rgb_to_hex(old_color_rgb)
 
         # Gửi màu hiện tại (Màu cũ) và màu rỗng (Màu mới) về UI
         if color_callback:
@@ -112,11 +113,12 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
             abs_y = win_top + rel_y
             abs_x, abs_y = clamp_coords(abs_x, abs_y)
 
-            new_surrounding_pixels = get_surrounding_pixels(abs_x, abs_y, radius=radius)
+            # Lấy màu pixel hiện tại
+            new_color_rgb = get_single_pixel_color(abs_x, abs_y)  # Dùng hàm lấy 1 pixel
             current_time = time.time()
 
             # ========================================================
-            # LOGIC IDLE TIMEOUT
+            # LOGIC IDLE TIMEOUT (Giữ nguyên)
             # ========================================================
             if current_time - last_action_time >= IDLE_TIMEOUT:
 
@@ -165,10 +167,10 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
                 break
             # ========================================================
 
-            # Logic kiểm tra: Nếu TẤT CẢ pixel đều khác màu cũ
-            if all([new_color != old_color for new_color, old_color in zip(new_surrounding_pixels, old_colors)]):
+            # TỐI ƯU LOGIC KIỂM TRA: CHỈ CẦN PIXEL TRUNG TÂM THAY ĐỔI
+            if new_color_rgb != old_color_rgb:
 
-                new_hex = rgb_to_hex(new_surrounding_pixels[0])
+                new_hex = rgb_to_hex(new_color_rgb)
 
                 # TÍNH KHOẢNG CÁCH MÀU
                 khoang_cach_mau = tinh_khoang_cach_weighted_rgb(old_hex, new_hex)
@@ -180,10 +182,10 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
                 update_status(f"Phát hiện thay đổi! KC={khoang_cach_mau:.2f} | Ngưỡng: {threshold}", new_hex)
 
                 # CHỈ CLICK KHI KHOẢNG CÁCH > NGƯỠNG
-                if khoang_cach_mau > threshold:  # SỬ DỤNG THAM SỐ THRESHOLD
+                if khoang_cach_mau > threshold:
 
                     log_activity(
-                        f"PHÁT HIỆN: {old_hex} -> {new_hex}: KC={khoang_cach_mau:.2f} > Ngưỡng={threshold} -> CLICK")
+                        f"PHÁT HIỆN & CLICK: KC={khoang_cach_mau:.2f} > Ngưỡng={threshold}. Bắt đầu chuỗi hành động.")
 
                     try:
                         pyautogui.click(abs_x, abs_y)
@@ -192,7 +194,7 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
                         log_activity(f"LỖI ACTION 1: Click chính thất bại: {e}")
 
                     # Cập nhật màu cũ và hex mới
-                    old_colors = new_surrounding_pixels
+                    old_color_rgb = new_color_rgb  # Cập nhật màu RGB cũ
                     old_hex = new_hex
 
                     # Cập nhật thời gian hành động cuối cùng
@@ -226,29 +228,30 @@ def watch_pixel(rel_x, rel_y, window_title, radius, threshold):
 
                 else:
                     # Nếu khoảng cách màu NHỎ (chỉ thay đổi nhẹ)
-                    log_activity(f"PHÁT HIỆN: {old_hex} -> {new_hex} KC={khoang_cach_mau:.2f} <= Ngưỡng={threshold} -> KHÔNG CLICK")
+                    log_activity(f"PHÁT HIỆN: KHÔNG CLICK. KC={khoang_cach_mau:.2f} <= Ngưỡng={threshold}")
 
-                    # Dừng nhẹ để tránh vòng lặp quá nhanh
-                    time.sleep(0.5)
+                    # Cập nhật màu cũ và hex mới (Nếu không click, màu hiện tại là màu mới)
+                    old_color_rgb = new_color_rgb  # Cập nhật màu RGB cũ
+                    old_hex = new_hex
 
                 # Sau khi xử lý xong (click hoặc không), cần cập nhật lại trạng thái màu ban đầu
-                current_hex_after_check = rgb_to_hex(old_colors[0])
+                current_hex_after_check = rgb_to_hex(old_color_rgb)
                 if color_callback:
                     color_callback(current_hex_after_check, "")
 
                 # Thoát vòng lặp nhỏ để lấy lại màu ban đầu
                 break
 
-            time.sleep(0.01)
-        time.sleep(0.5)
+            time.sleep(0.01)  # TỐI ƯU
+        time.sleep(0.05)  # TỐI ƯU
 
 
 # =====================================
 # HÀM BÊN NGOÀI (CẦN EXPORT CHO CONTROLLER)
 # =====================================
 
-# THÊM THAM SỐ threshold
-def start_watching(rel_x, rel_y, window_title, radius, threshold):
+# BỎ THAM SỐ RADIUS
+def start_watching(rel_x, rel_y, window_title, threshold):
     """Bắt đầu luồng theo dõi pixel và click"""
     global running, last_action_time
 
@@ -259,8 +262,8 @@ def start_watching(rel_x, rel_y, window_title, radius, threshold):
     running = True
     last_action_time = time.time()  # Reset thời gian khi bắt đầu
     update_status(f"Auto đang bật tại ({rel_x},{rel_y}) | Ngưỡng: {threshold}", "#ccffcc")
-    # TRUYỀN THAM SỐ THRESHOLD VÀO LUỒNG
-    threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, radius, threshold), daemon=True).start()
+    # TRUYỀN THAM SỐ KHÔNG CÓ RADIUS VÀO LUỒNG
+    threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, threshold), daemon=True).start()
 
 
 def stop_watching():
@@ -272,7 +275,7 @@ def stop_watching():
 
 
 # =====================================
-# HÀM CHỌN TỌA ĐỘ
+# HÀM CHỌN TỌA ĐỘ (Giữ nguyên)
 # =====================================
 waiting_for_click = False
 

@@ -3,8 +3,8 @@ from tkinter import ttk, messagebox
 import keyboard
 import threading
 from controller import refresh_window_list, handle_start, handle_stop, handle_pick_mode, load_log_list_data, \
-    delete_selected_items, delete_all_log, init_controller, handle_view_log_file  # IMPORT HÀM MỚI
-import os  # Cần để mở file location
+    delete_selected_items, delete_all_log, init_controller, handle_view_log_file
+import os
 
 # external libs (mouse/keyboard/pygetwindow)
 try:
@@ -43,7 +43,6 @@ tree = None
 # =====================================
 # HÀM CẬP NHẬT UI (Callback cho Controller/Autoclicker)
 # =====================================
-
 def update_status(text, color=None):
     """Cập nhật nhãn trạng thái"""
     global status_label, root
@@ -122,7 +121,7 @@ def update_color_labels(old_hex, new_hex):
 
 
 # =====================================
-# HÀM XỬ LÝ LOG VIEWER (MỚI)
+# HÀM XỬ LÝ LOG VIEWER
 # =====================================
 def open_log_viewer(log_type):
     """Mở hộp thoại hiển thị nội dung file log"""
@@ -135,7 +134,7 @@ def open_log_viewer(log_type):
     log_dialog = tk.Toplevel(root)
     log_dialog.title(f"Log Viewer: {log_type}")
     log_dialog.geometry("1080x768")
-    log_dialog.resizable(False, False)  # KHÔNG CHO THAY ĐỔI KÍCH THƯỚC
+    log_dialog.resizable(False, False)
 
     # Khung chứa các nút điều khiển
     frame_controls = tk.Frame(log_dialog)
@@ -172,7 +171,7 @@ def open_log_viewer(log_type):
 
     # Chèn nội dung log
     text_log.insert(tk.END, log_content)
-    text_log.config(state=tk.DISABLED)  # Không cho phép chỉnh sửa
+    text_log.config(state=tk.DISABLED)
 
 
 # =====================================
@@ -199,7 +198,8 @@ def on_start_click():
     title = combo_window.get()
     x = entry_x.get()
     y = entry_y.get()
-    radius = entry_radius.get()
+    # Gửi giá trị cố định "0" cho radius (do đã bị loại bỏ khỏi UI nhưng controller cần tham số)
+    radius = "0"
     threshold = entry_threshold.get()
     handle_start(title, x, y, radius, threshold)
 
@@ -271,43 +271,57 @@ def ui_delete_all_log():
         messagebox.showinfo("Hoàn tất", msg)
 
 
+# HÀM ABOUT ĐÃ ĐƯỢC CẬP NHẬT ĐỂ CÓ THANH CUỘN, GIỚI HẠN CHIỀU CAO NỘI DUNG VÀ HIỂN THỊ NÚT ĐÓNG BÊN NGOÀI
 def show_about():
     """Hiển thị cửa sổ About"""
     global root
     about = tk.Toplevel(root)
     about.title("About")
-    about.geometry("400x200")
+    # Tăng chiều cao để chứa nội dung cuộn tốt hơn
+    about.geometry("450x300")
     about.resizable(False, False)
 
-    # Nội dung About (giữ nguyên hoặc tùy chỉnh thêm)
+    # Khung viền (Border is now the first thing packed into `about`)
     border = tk.Frame(about, highlightbackground="black", highlightcolor="black",
                       highlightthickness=1, bd=0)
-    border.pack(fill="both", expand=True, padx=10, pady=10)
+    # Loại bỏ expand=True để nó không chiếm toàn bộ chiều cao, giải phóng không gian cho nút Đóng (đã bị loại bỏ)
+    border.pack(fill="both", padx=10, pady=10, expand=True)  # Dùng expand=True để canvas chiếm hết không gian
 
-    frame = tk.Frame(border)
-    frame.pack(fill="both", expand=True)
+    # Khung chứa Canvas và Scrollbar
+    frame_scroll_container = tk.Frame(border)
+    # Để frame_scroll_container expand bên trong border
+    frame_scroll_container.pack(fill="both", expand=True)
 
-    canvas = tk.Canvas(frame, highlightthickness=0)
-    scrollbar = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
+    # 1. Tạo Canvas
+    canvas = tk.Canvas(frame_scroll_container, highlightthickness=0)
+    canvas.pack(side="left", fill="both", expand=True)
+
+    # 2. Tạo Scrollbar
+    scrollbar = ttk.Scrollbar(frame_scroll_container, orient="vertical", command=canvas.yview)
+    scrollbar.pack(side="right", fill="y")
+
+    # Kết nối Scrollbar với Canvas
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    # 3. Tạo Frame để chứa nội dung bên trong Canvas
     scroll_frame = tk.Frame(canvas)
 
+    # Gán scroll_frame vào Canvas
+    scroll_frame_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+
+    # Cập nhật vùng cuộn khi kích thước scroll_frame thay đổi
     scroll_frame.bind(
         "<Configure>",
         lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
     )
 
+    # Đảm bảo scroll_frame chiếm toàn bộ chiều rộng của canvas
     canvas.bind(
         "<Configure>",
         lambda e: canvas.itemconfig(scroll_frame_id, width=e.width)
     )
 
-    scroll_frame_id = canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
-
-    canvas.configure(yscrollcommand=scrollbar.set)
-
-    canvas.pack(side="left", fill="both", expand=True)
-    scrollbar.pack(side="right", fill="y")
-
+    # --- Nội dung About ---
     title_text = "Auto Clicker v1.1.2\nTác giả: Kevin Quach\n"
     title_label = tk.Label(
         scroll_frame,
@@ -321,18 +335,19 @@ def show_about():
     separator = ttk.Separator(scroll_frame, orient="horizontal")
     separator.pack(fill="x", padx=10, pady=(0, 5))
 
+    # Thêm nhiều dòng hơn để kiểm tra thanh cuộn
     body_text = ("- Sửa lại vị trí lưu file log.\n"
-                 "- Thêm tính năng chọn số điểm ảnh theo dõi.\n"
+                 "- Tối ưu hóa tốc độ theo dõi màu sắc (Chỉ xét 1 pixel).\n"
                  "- Cải thiện tính năng phát hiện thay đổi màu sắc.\n"
                  "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi.\n"
                  "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.\n"
                  "- Thêm tính năng Hồi phục (Idle Timeout).\n"
-                 "- Thêm Menu Diagnostics để xem Log.")
+                 "- Thêm Menu Diagnostics để xem Log.\n"
+                 "- **Cập nhật:** Hộp thoại About đã có tính năng cuộn (scrollbar).\n"
+                 "---------------------------------------------------\n")
     body_label = tk.Label(scroll_frame, text=body_text, justify="left",
-                          anchor="nw", wraplength=380)
+                          anchor="nw", wraplength=400, height=15)
     body_label.pack(fill="both", expand=True, padx=5, pady=(0, 10))
-
-    tk.Button(about, text="Đóng", command=about.destroy).pack(pady=3)
 
 
 # =====================================
@@ -382,7 +397,7 @@ def start_ui():
 
     root.config(menu=menubar)
 
-    # --- Phần còn lại của UI (giữ nguyên) ---
+    # --- Phần chính của UI ---
 
     tk.Label(root, text="Chọn cửa sổ mục tiêu:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
 
@@ -404,22 +419,12 @@ def start_ui():
     entry_y = tk.Entry(root)
     entry_y.pack(fill="x", pady=2)
 
-    # KHUNG CHỨA BÁN KÍNH VÀ NGƯỠNG MÀU
+    # KHUNG CHỨA NGƯỠNG MÀU
     frame_params = tk.Frame(root)
     frame_params.pack(fill="x", pady=5)
 
-    # KHỐI 1: BÁN KÍNH KIỂM TRA PIXEL
-    frame_radius = tk.Frame(frame_params)
-    frame_radius.pack(side=tk.LEFT, fill="x", expand=True)
-
-    tk.Label(frame_radius, text="Bán kính kiểm tra pixel:").pack(anchor="w")
-    entry_radius = tk.Entry(frame_radius, width=5)
-    entry_radius.insert(0, "0")
-    entry_radius.pack(pady=2, anchor="w", fill="x")
-
-    # KHỐI 2: NGƯỠNG KHOẢNG CÁCH MÀU
     frame_threshold = tk.Frame(frame_params)
-    frame_threshold.pack(side=tk.LEFT, fill="x", expand=True, padx=(10, 0))
+    frame_threshold.pack(side=tk.LEFT, fill="x", expand=True)
 
     tk.Label(frame_threshold, text="Ngưỡng khoảng cách màu:").pack(anchor="w")
     entry_threshold = tk.Entry(frame_threshold, width=5)

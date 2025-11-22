@@ -1,6 +1,6 @@
 import pygetwindow as gw
 from utils.file_io import save_position_to_log, load_log_data, overwrite_log_data, clear_log_file, \
-    get_log_content_and_path, log_activity  # IMPORT HÀM MỚI TỪ FILE_IO
+    get_log_content_and_path, log_activity
 from autoclicker import start_watching as ac_start, stop_watching as ac_stop, enable_pick_mode as ac_pick, set_callbacks
 from tkinter import messagebox
 from datetime import datetime
@@ -46,7 +46,7 @@ def get_window_rect(title):
 
 
 # =====================================
-# LOGIC LƯU/TẢI LOG
+# LOGIC LƯU/TẢI LOG (Giữ nguyên)
 # =====================================
 def save_position(title, rel_x, rel_y):
     """Lưu tọa độ mới vào file positions.log và cập nhật UI"""
@@ -113,7 +113,7 @@ def delete_all_log():
 
 
 # =====================================
-# HÀM XỬ LÝ LOG MỚI
+# HÀM XỬ LÝ LOG MỚI (Giữ nguyên)
 # =====================================
 def handle_view_log_file(log_type):
     """Lấy nội dung log và đường dẫn thư mục cho Log Viewer Dialog"""
@@ -125,6 +125,7 @@ def handle_view_log_file(log_type):
 # =====================================
 # HÀM BÊN NGOÀI GỌI TỪ UI
 # =====================================
+# BỎ LOGIC KIỂM TRA RADIUS VÀ KHÔNG TRUYỀN NÓ VÀO ac_start
 def handle_start(window_title, x_str, y_str, radius_str, threshold_str):
     """Xử lý nút Start"""
 
@@ -139,13 +140,7 @@ def handle_start(window_title, x_str, y_str, radius_str, threshold_str):
         messagebox.showerror("Lỗi", "Tọa độ phải là số!")
         return
 
-    try:
-        radius = int(radius_str)
-        if radius < 0:
-            raise ValueError
-    except:
-        messagebox.showerror("Lỗi", "Bán kính phải là số nguyên không âm!")
-        return
+    # Logic kiểm tra radius đã bị loại bỏ ở đây
 
     try:
         threshold = float(threshold_str)
@@ -159,7 +154,8 @@ def handle_start(window_title, x_str, y_str, radius_str, threshold_str):
     if last_saved_coords != (rel_x, rel_y):
         save_position(window_title, rel_x, rel_y)
 
-    ac_start(rel_x, rel_y, window_title, radius, threshold)
+    # BỎ THAM SỐ RADIUS KHI GỌI ac_start
+    ac_start(rel_x, rel_y, window_title, threshold)
 
 
 def handle_stop():
