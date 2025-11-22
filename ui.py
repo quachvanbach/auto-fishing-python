@@ -3,10 +3,10 @@ from tkinter import ttk, messagebox
 import keyboard
 import threading
 from controller import refresh_window_list, handle_start, handle_stop, handle_pick_mode, load_log_list_data, \
-    delete_selected_items, delete_all_log, init_controller
+    delete_selected_items, delete_all_log, init_controller, handle_view_log_file  # IMPORT HÀM MỚI
+import os  # Cần để mở file location
 
 # external libs (mouse/keyboard/pygetwindow)
-# Đặt kiểm tra tại đây để đảm bảo khởi động chương trình có đủ module
 try:
     import mouse
 except ImportError:
@@ -31,16 +31,12 @@ combo_window = None
 entry_x = None
 entry_y = None
 entry_radius = None
-entry_threshold = None  # BIẾN MỚI CHO NGƯỠNG MÀU
+entry_threshold = None
 status_label = None
-
-# BIẾN MỚI THAY THẾ color_label
 color_canvas_before = None
 color_hex_before = None
 color_canvas_after = None
 color_hex_after = None
-# HẾT BIẾN MỚI
-
 tree = None
 
 
@@ -79,7 +75,6 @@ def load_log_list():
         tree.insert("", "end", values=row)
 
 
-# HÀM MỚI HIỂN THỊ MÀU
 def draw_color_circle(canvas, color_hex):
     """Vẽ hình tròn màu lên canvas (hoặc làm trống nếu màu rỗng)"""
     canvas.delete("all")
@@ -94,7 +89,7 @@ def draw_color_circle(canvas, color_hex):
             width // 2 - radius,
             height // 2 - radius,
             width // 2 + radius,
-            height // 2 + radius,
+            width // 2 + radius,
             fill=color_hex,
             outline="#444444"
         )
@@ -127,6 +122,60 @@ def update_color_labels(old_hex, new_hex):
 
 
 # =====================================
+# HÀM XỬ LÝ LOG VIEWER (MỚI)
+# =====================================
+def open_log_viewer(log_type):
+    """Mở hộp thoại hiển thị nội dung file log"""
+    global root
+
+    # 1. Lấy nội dung log và đường dẫn thư mục
+    log_content, log_folder_path = handle_view_log_file(log_type)
+
+    # 2. Tạo hộp thoại Log Viewer Dialog
+    log_dialog = tk.Toplevel(root)
+    log_dialog.title(f"Log Viewer: {log_type}")
+    log_dialog.geometry("1080x768")
+    log_dialog.resizable(False, False)  # KHÔNG CHO THAY ĐỔI KÍCH THƯỚC
+
+    # Khung chứa các nút điều khiển
+    frame_controls = tk.Frame(log_dialog)
+    frame_controls.pack(fill="x", padx=10, pady=5)
+
+    # Nút Open file location
+    def open_folder():
+        if os.path.isdir(log_folder_path):
+            os.startfile(log_folder_path)
+        else:
+            messagebox.showerror("Lỗi", "Không tìm thấy thư mục log!")
+
+    tk.Button(frame_controls, text="Open file location", command=open_folder).pack(side="left")
+
+    # Nút Đóng (nằm cùng hàng ngang)
+    tk.Button(frame_controls, text="Close", command=log_dialog.destroy).pack(side="right")
+
+    # Khung chứa Text widget và Scrollbar
+    frame_text = tk.Frame(log_dialog)
+    frame_text.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+    # Text widget để hiển thị nội dung log
+    text_log = tk.Text(frame_text, wrap=tk.NONE, height=10, width=40)
+
+    # Scrollbars
+    vsb = tk.Scrollbar(frame_text, orient="vertical", command=text_log.yview)
+    hsb = tk.Scrollbar(frame_text, orient="horizontal", command=text_log.xview)
+
+    text_log.config(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+    vsb.pack(side="right", fill="y")
+    hsb.pack(side="bottom", fill="x")
+    text_log.pack(side="left", fill="both", expand=True)
+
+    # Chèn nội dung log
+    text_log.insert(tk.END, log_content)
+    text_log.config(state=tk.DISABLED)  # Không cho phép chỉnh sửa
+
+
+# =====================================
 # HÀM XỬ LÝ SỰ KIỆN UI
 # =====================================
 
@@ -151,8 +200,8 @@ def on_start_click():
     x = entry_x.get()
     y = entry_y.get()
     radius = entry_radius.get()
-    threshold = entry_threshold.get()  # LẤY NGƯỠNG TỪ INPUT MỚI
-    handle_start(title, x, y, radius, threshold)  # TRUYỀN THÊM THRESHOLD
+    threshold = entry_threshold.get()
+    handle_start(title, x, y, radius, threshold)
 
 
 def on_stop_click():
@@ -230,6 +279,7 @@ def show_about():
     about.geometry("400x200")
     about.resizable(False, False)
 
+    # Nội dung About (giữ nguyên hoặc tùy chỉnh thêm)
     border = tk.Frame(about, highlightbackground="black", highlightcolor="black",
                       highlightthickness=1, bd=0)
     border.pack(fill="both", expand=True, padx=10, pady=10)
@@ -258,7 +308,6 @@ def show_about():
     canvas.pack(side="left", fill="both", expand=True)
     scrollbar.pack(side="right", fill="y")
 
-    # --- Nội dung ---
     title_text = "Auto Clicker v1.1.2\nTác giả: Kevin Quach\n"
     title_label = tk.Label(
         scroll_frame,
@@ -276,7 +325,9 @@ def show_about():
                  "- Thêm tính năng chọn số điểm ảnh theo dõi.\n"
                  "- Cải thiện tính năng phát hiện thay đổi màu sắc.\n"
                  "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi.\n"
-                 "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.")
+                 "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.\n"
+                 "- Thêm tính năng Hồi phục (Idle Timeout).\n"
+                 "- Thêm Menu Diagnostics để xem Log.")
     body_label = tk.Label(scroll_frame, text=body_text, justify="left",
                           anchor="nw", wraplength=380)
     body_label.pack(fill="both", expand=True, padx=5, pady=(0, 10))
@@ -291,29 +342,47 @@ def show_about():
 def start_ui():
     """Khởi tạo và chạy giao diện chính"""
     global root, combo_window, entry_x, entry_y, entry_radius, entry_threshold, status_label, tree
-    global color_canvas_before, color_hex_before, color_canvas_after, color_hex_after  # Biến mới
+    global color_canvas_before, color_hex_before, color_canvas_after, color_hex_after
 
     root = tk.Tk()
-    root.title("Auto Clicker theo cửa sổ")
-    root.geometry("400x700")
+    root.title("Auto Clicker")
+    root.geometry("450x700")
     root.resizable(False, False)
     root.config(padx=10, pady=10)
 
-    # KHỞI TẠO CONTROLLER: Dùng callback mới: update_color_labels
+    # KHỞI TẠO CONTROLLER
     init_controller(update_status, update_color_labels, load_log_list, set_coordinate_entries)
 
     # Menu bar
     menubar = tk.Menu(root)
 
+    # Menu File
     menu_file = tk.Menu(menubar, tearoff=0)
     menu_file.add_command(label="Thoát", command=root.destroy)
     menubar.add_cascade(label="File", menu=menu_file)
 
+    # Menu Tools -> Diagnostics -> View Log
+    menu_tools = tk.Menu(menubar, tearoff=0)
+
+    menu_diagnostics = tk.Menu(menu_tools, tearoff=0)
+
+    menu_view_log = tk.Menu(menu_diagnostics, tearoff=0)
+    menu_view_log.add_command(label="positions.log", command=lambda: open_log_viewer('positions'))
+    menu_view_log.add_command(label="activity.log", command=lambda: open_log_viewer('activity'))
+
+    menu_diagnostics.add_cascade(label="View Log", menu=menu_view_log)
+
+    menu_tools.add_cascade(label="Diagnostics", menu=menu_diagnostics)
+    menubar.add_cascade(label="Tools", menu=menu_tools)
+
+    # Menu About
     menu_about = tk.Menu(menubar, tearoff=0)
     menu_about.add_command(label="About", command=show_about)
     menubar.add_cascade(label="About", menu=menu_about)
 
     root.config(menu=menubar)
+
+    # --- Phần còn lại của UI (giữ nguyên) ---
 
     tk.Label(root, text="Chọn cửa sổ mục tiêu:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
 
@@ -348,13 +417,13 @@ def start_ui():
     entry_radius.insert(0, "0")
     entry_radius.pack(pady=2, anchor="w", fill="x")
 
-    # KHỐI 2: NGƯỠNG KHOẢNG CÁCH MÀU (THÊM MỚI)
+    # KHỐI 2: NGƯỠNG KHOẢNG CÁCH MÀU
     frame_threshold = tk.Frame(frame_params)
     frame_threshold.pack(side=tk.LEFT, fill="x", expand=True, padx=(10, 0))
 
     tk.Label(frame_threshold, text="Ngưỡng khoảng cách màu:").pack(anchor="w")
     entry_threshold = tk.Entry(frame_threshold, width=5)
-    entry_threshold.insert(0, "10")  # Giá trị mặc định là 50
+    entry_threshold.insert(0, "10")
     entry_threshold.pack(pady=2, anchor="w", fill="x")
 
     tk.Button(root, text="Chọn vị trí (Ctrl + F10)", command=on_pick_click).pack(pady=5, fill="x")
@@ -368,52 +437,37 @@ def start_ui():
     btn_stop = tk.Button(frame_buttons, text="Dừng lại (F12)", command=on_stop_click, bg="#f08080", width=15)
     btn_stop.pack(side="left", padx=5, expand=True, fill="x")
 
-    # TRẠNG THÁI (vẫn giữ nguyên)
+    # TRẠNG THÁI
     status_label = tk.Label(root, text="Auto Clicker tạm dừng", anchor="w")
     status_label.pack(fill="x", pady=(5, 0))
 
-    # BẮT ĐẦU PHẦN HIỂN THỊ MÀU
+    # PHẦN HIỂN THỊ MÀU
     frame_colors = tk.Frame(root)
     frame_colors.pack(fill="x", pady=(5, 5))
 
-    # KHỐI 1: MÀU TRƯỚC KHI THAY ĐỔI
     frame_before = tk.Frame(frame_colors)
     frame_before.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(0, 5))
-
     tk.Label(frame_before, text="Màu trước thay đổi:", anchor="w").pack(fill="x")
-
     sub_frame_before = tk.Frame(frame_before)
     sub_frame_before.pack(fill="x")
-
-    # Canvas hình tròn
     color_canvas_before = tk.Canvas(sub_frame_before, width=20, height=20, highlightthickness=0)
     color_canvas_before.pack(side=tk.LEFT, padx=(0, 5))
-
-    # Ô nhập mã Hex (DISABLED)
     color_hex_before = tk.Entry(sub_frame_before, width=10, justify='center')
     color_hex_before.insert(0, "#XXXXXX")
     color_hex_before.config(state=tk.DISABLED, relief=tk.FLAT)
     color_hex_before.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-    # KHỐI 2: MÀU SAU KHI THAY ĐỔI
     frame_after = tk.Frame(frame_colors)
     frame_after.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
-
     tk.Label(frame_after, text="Màu sau thay đổi:", anchor="w").pack(fill="x")
-
     sub_frame_after = tk.Frame(frame_after)
     sub_frame_after.pack(fill="x")
-
-    # Canvas hình tròn
     color_canvas_after = tk.Canvas(sub_frame_after, width=20, height=20, highlightthickness=0)
     color_canvas_after.pack(side=tk.LEFT, padx=(0, 5))
-
-    # Ô nhập mã Hex (DISABLED)
     color_hex_after = tk.Entry(sub_frame_after, width=10, justify='center')
     color_hex_after.insert(0, "#XXXXXX")
     color_hex_after.config(state=tk.DISABLED, relief=tk.FLAT)
     color_hex_after.pack(side=tk.LEFT, fill=tk.X, expand=True)
-    # KẾT THÚC PHẦN HIỂN THỊ MÀU MỚI
 
     tk.Label(root, text="Lịch sử tọa độ:", font=("Segoe UI", 10, "bold")).pack(pady=(5, 0), anchor="w")
 

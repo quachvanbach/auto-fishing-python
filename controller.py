@@ -1,6 +1,6 @@
 import pygetwindow as gw
-from utils.file_io import save_position_to_log, load_log_data, overwrite_log_data, clear_log_file
-# Thêm 'start_watching_with_threshold' để xử lý tham số mới
+from utils.file_io import save_position_to_log, load_log_data, overwrite_log_data, clear_log_file, \
+    get_log_content_and_path, log_activity  # IMPORT HÀM MỚI TỪ FILE_IO
 from autoclicker import start_watching as ac_start, stop_watching as ac_stop, enable_pick_mode as ac_pick, set_callbacks
 from tkinter import messagebox
 from datetime import datetime
@@ -49,7 +49,7 @@ def get_window_rect(title):
 # LOGIC LƯU/TẢI LOG
 # =====================================
 def save_position(title, rel_x, rel_y):
-    """Lưu tọa độ và cập nhật last_saved_coords"""
+    """Lưu tọa độ mới vào file positions.log và cập nhật UI"""
     global last_saved_coords
 
     if save_position_to_log(title, rel_x, rel_y):
@@ -97,23 +97,35 @@ def delete_selected_items(selected_data):
     if overwrite_log_data(new_rows):
         if ui_callbacks.get('load_list'):
             ui_callbacks['load_list']()
+        log_activity("LOG: Đã xóa các mục positions.log đã chọn.")
         return True, "Đã xóa các mục đã chọn!"
     return False, "Lỗi khi ghi file log!"
 
 
 def delete_all_log():
-    """Xóa toàn bộ log"""
+    """Xóa toàn bộ log vị trí"""
     if clear_log_file():
         if ui_callbacks.get('load_list'):
             ui_callbacks['load_list']()
+        log_activity("LOG: Đã xóa toàn bộ positions.log.")
         return True, "Đã xóa toàn bộ!"
     return False, "Lỗi khi xóa file log!"
 
 
 # =====================================
+# HÀM XỬ LÝ LOG MỚI
+# =====================================
+def handle_view_log_file(log_type):
+    """Lấy nội dung log và đường dẫn thư mục cho Log Viewer Dialog"""
+    # log_type sẽ là 'positions' hoặc 'activity'
+    content, folder_path = get_log_content_and_path(log_type)
+    return content, folder_path
+
+
+# =====================================
 # HÀM BÊN NGOÀI GỌI TỪ UI
 # =====================================
-def handle_start(window_title, x_str, y_str, radius_str, threshold_str):  # NHẬN THÊM THRESHOLD
+def handle_start(window_title, x_str, y_str, radius_str, threshold_str):
     """Xử lý nút Start"""
 
     if not window_title:
@@ -136,7 +148,7 @@ def handle_start(window_title, x_str, y_str, radius_str, threshold_str):  # NH�
         return
 
     try:
-        threshold = float(threshold_str)  # Ngưỡng màu có thể là số thập phân
+        threshold = float(threshold_str)
         if threshold < 0:
             raise ValueError
     except:
@@ -147,7 +159,6 @@ def handle_start(window_title, x_str, y_str, radius_str, threshold_str):  # NH�
     if last_saved_coords != (rel_x, rel_y):
         save_position(window_title, rel_x, rel_y)
 
-    # TRUYỀN THÊM THRESHOLD CHO AUTOCLICKER
     ac_start(rel_x, rel_y, window_title, radius, threshold)
 
 
