@@ -449,12 +449,13 @@ def show_about():
                  "- Tối ưu hóa tốc độ theo dõi màu sắc (Chỉ xét 1 pixel).\n"
                  "- Cải thiện tính năng phát hiện thay đổi màu sắc.\n"
                  "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi (Ngưỡng mặc định 5).\n"
-                 "- **Mới:** Thêm chế độ theo dõi 5 điểm pixel với Độ lệch A.\n"
                  "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.\n"
                  "- Thêm tính năng Hồi phục (Idle Timeout).\n"
                  "- Thêm Menu Diagnostics để xem Log.\n"
-                 "- **Cập nhật:** Hộp thoại About đã có tính năng cuộn (scrollbar).\n"
+                 "- **Cập nhật:**  Thêm chế độ theo dõi 5 điểm pixel với Độ lệch A.\n"
+                 "- **Cập nhật:**  Thay đổi khung hiển thị log, positions.log → activity.log"
                  "- **Cập nhật:** Chế độ Start Screen và quản lý thoát ứng dụng linh hoạt.\n"
+                 "- **Cập nhật:** Thêm tính năng chỉnh thời gian cất cá vào túi.\n"
                  "---------------------------------------------------\n")
     body_label = tk.Label(scroll_frame, text=body_text, justify="left",
                           anchor="nw", wraplength=400, height=15)
@@ -601,15 +602,15 @@ def create_main_app_window():
                              command=on_pixel_mode_toggle)
     rb_five.pack(side=tk.LEFT)
 
-    tk.Button(main_app_window, text="Chọn vị trí (Ctrl + F10)", command=on_pick_click).pack(pady=5, fill="x")
+    tk.Button(main_app_window, text="Chọn vị trí (F9)", command=on_pick_click).pack(pady=5, fill="x")
 
     frame_buttons = tk.Frame(main_app_window)
     frame_buttons.pack(pady=5, fill="x")
 
-    btn_start = tk.Button(frame_buttons, text="Bắt đầu (F11)", command=on_start_click, bg="#9fdb9f", width=15)
+    btn_start = tk.Button(frame_buttons, text="Bắt đầu (F10)", command=on_start_click, bg="#9fdb9f", width=15)
     btn_start.pack(side="left", padx=5, expand=True, fill="x")
 
-    btn_stop = tk.Button(frame_buttons, text="Dừng lại (F12)", command=on_stop_click, bg="#f08080", width=15)
+    btn_stop = tk.Button(frame_buttons, text="Dừng lại (F11)", command=on_stop_click, bg="#f08080", width=15)
     btn_stop.pack(side="left", padx=5, expand=True, fill="x")
 
     # TRẠNG THÁI

@@ -252,14 +252,14 @@ def watch_pixel(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_
                 # Gửi màu cũ và màu mới (màu có KC lớn nhất) về UI
                 color_callback(old_hex, new_color_to_log_hex)
 
-            update_status(f"{old_hex} -> {new_color_to_log_hex} => KC={khoang_cach_mau:.2f} | Ngưỡng: {threshold}",
+            update_status(f"{old_hex} ⇨ {new_color_to_log_hex} ⟹ KC={khoang_cach_mau:.2f} | Ngưỡng: {threshold}",
                           new_color_to_log_hex)
 
             # CHỈ CLICK KHI KHOẢNG CÁCH > NGƯỠNG
             if khoang_cach_mau > threshold:
 
                 log_activity(
-                    f"{old_hex} -> {new_color_to_log_hex} => KC={khoang_cach_mau:.2f} > Ngưỡng={threshold}. Bắt đầu chuỗi hành động.")
+                    f"{old_hex} ⇨ {new_color_to_log_hex} ⟹ KC={khoang_cach_mau:.2f} > Ngưỡng={threshold}. Bắt đầu chuỗi hành động.")
 
                 try:
                     pyautogui.click(abs_x, abs_y)
@@ -303,7 +303,7 @@ def watch_pixel(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_
 
             else:
                 # Nếu khoảng cách màu NHỎ (KC > 0.0 nhưng <= Ngưỡng)
-                log_activity(f"{old_hex} -> {new_color_to_log_hex} => KC={khoang_cach_mau:.2f} <= Ngưỡng={threshold}")
+                log_activity(f"{old_hex} ⇨ {new_color_to_log_hex} ⟹ KC={khoang_cach_mau:.2f} <= Ngưỡng={threshold}")
 
                 # Cập nhật màu cũ và hex mới (Nếu không click, màu hiện tại là màu mới được phát hiện)
                 old_color_rgb = new_color_to_log_rgb  # Cập nhật màu RGB cũ
