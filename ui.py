@@ -2,9 +2,17 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import keyboard
 import threading
-from controller import refresh_window_list, handle_start, handle_stop, handle_pick_mode, load_log_list_data, \
-    delete_selected_items, delete_all_log, init_controller, handle_view_log_file
 import os
+from datetime import datetime
+from controller import (
+    refresh_window_list, handle_start, handle_stop, handle_pick_mode,
+    init_controller, handle_view_log_file, set_pixel_mode_on_off,
+    load_last_known_state
+)
+from utils.file_io import log_activity, get_log_content_and_path
+from utils.window_manager import (
+    center_window_on_screen, position_main_app_right_center, center_toplevel_on_parent
+)
 
 # external libs (mouse/keyboard/pygetwindow)
 try:
@@ -27,27 +35,50 @@ except ImportError:
 
 # Biến UI toàn cục
 root = None
+start_screen = None  # Cửa sổ Start
+main_app_window = None  # Cửa sổ ứng dụng chính
 combo_window = None
 entry_x = None
 entry_y = None
-entry_radius = None
 entry_threshold = None
+entry_a = None  # Độ lệch A
+# BIẾN MỚI: Độ trễ sau Click
+entry_delay_after_click = None
 status_label = None
 color_canvas_before = None
 color_hex_before = None
 color_canvas_after = None
 color_hex_after = None
-tree = None
+tree = None  # Treeview cũ (loại bỏ)
+activity_log_text = None  # Text widget mới cho Activity Log
+pixel_mode_var = None  # Biến trạng thái cho chế độ 1/5 điểm
 
 
 # =====================================
 # HÀM CẬP NHẬT UI (Callback cho Controller/Autoclicker)
 # =====================================
+
 def update_status(text, color=None):
     """Cập nhật nhãn trạng thái"""
-    global status_label, root
-    if status_label:
-        status_label.config(text=text)
+    global status_label
+    if status_label and main_app_window:
+        status_label.config(text=text, bg=color if color else main_app_window.cget("bg"))
+        update_activity_log(f"{text}", color)
+
+
+def update_activity_log(message, color=None):
+    """Cập nhật nội dung Activity Log trong UI chính"""
+    global activity_log_text
+    if activity_log_text:
+        current_time = datetime.now().strftime("[%H:%M:%S]")
+        activity_log_text.config(state=tk.NORMAL)
+
+        # Thêm tag màu nếu có
+        activity_log_text.insert(tk.END, f"{current_time} {message}\n")
+
+        # Tự động cuộn xuống cuối
+        activity_log_text.see(tk.END)
+        activity_log_text.config(state=tk.DISABLED)
 
 
 def set_coordinate_entries(rel_x, rel_y):
@@ -60,18 +91,16 @@ def set_coordinate_entries(rel_x, rel_y):
         entry_y.insert(0, rel_y)
 
 
+def set_window_entry(window_title):
+    """Cập nhật combobox cửa sổ"""
+    global combo_window
+    if combo_window:
+        combo_window.set(window_title)
+
+
 def load_log_list():
-    """Tải dữ liệu log vào Treeview"""
-    global tree
-    if not tree:
-        return
-
-    for item in tree.get_children():
-        tree.delete(item)
-
-    data = load_log_list_data()
-    for row in data:
-        tree.insert("", "end", values=row)
+    """Tải dữ liệu log (Chức năng cũ không dùng nữa, giữ hàm rỗng)"""
+    pass
 
 
 def draw_color_circle(canvas, color_hex):
@@ -79,22 +108,28 @@ def draw_color_circle(canvas, color_hex):
     canvas.delete("all")
     if color_hex and color_hex != "#XXXXXX" and color_hex != "":
         # Lấy kích thước canvas
-        width = canvas.winfo_width()
-        height = canvas.winfo_height()
-        radius = 9
+        def _draw():
+            width = canvas.winfo_width()
+            height = canvas.winfo_height()
+            if width > 0 and height > 0 and main_app_window:
+                radius = 9
+                canvas.create_oval(
+                    width // 2 - radius,
+                    height // 2 - radius,
+                    width // 2 + radius,
+                    width // 2 + radius,
+                    fill=color_hex,
+                    outline="#444444"
+                )
+            elif main_app_window:  # Thử lại chỉ khi cửa sổ chính còn tồn tại
+                canvas.after(50, _draw)
 
-        # Vẽ hình tròn chính giữa
-        canvas.create_oval(
-            width // 2 - radius,
-            height // 2 - radius,
-            width // 2 + radius,
-            width // 2 + radius,
-            fill=color_hex,
-            outline="#444444"
-        )
-    else:
+        # Sử dụng main_app_window để đảm bảo có cửa sổ chính
+        if main_app_window:
+            _draw()
+    elif main_app_window:
         # Đặt màu nền mặc định
-        canvas.config(bg=root.cget("bg"))
+        canvas.config(bg=main_app_window.cget("bg"))
 
 
 def update_color_labels(old_hex, new_hex):
@@ -121,35 +156,37 @@ def update_color_labels(old_hex, new_hex):
 
 
 # =====================================
-# HÀM XỬ LÝ LOG VIEWER
+# HÀM XỬ LÝ LOG VIEWER (Cập nhật vị trí)
 # =====================================
 def open_log_viewer(log_type):
     """Mở hộp thoại hiển thị nội dung file log"""
-    global root
+    global main_app_window
 
     # 1. Lấy nội dung log và đường dẫn thư mục
     log_content, log_folder_path = handle_view_log_file(log_type)
 
     # 2. Tạo hộp thoại Log Viewer Dialog
-    log_dialog = tk.Toplevel(root)
+    log_dialog = tk.Toplevel(main_app_window)
     log_dialog.title(f"Log Viewer: {log_type}")
-    log_dialog.geometry("1080x768")
-    log_dialog.resizable(False, False)
+
+    # Cập nhật vị trí
+    LOG_WIDTH, LOG_HEIGHT = 800, 600
+    if main_app_window:
+        log_dialog.geometry(center_toplevel_on_parent(log_dialog, main_app_window, LOG_WIDTH, LOG_HEIGHT))
+    else:
+        log_dialog.geometry(center_window_on_screen(log_dialog, LOG_WIDTH, LOG_HEIGHT))
+
+    log_dialog.resizable(True, True)
 
     # Khung chứa các nút điều khiển
     frame_controls = tk.Frame(log_dialog)
     frame_controls.pack(fill="x", padx=10, pady=5)
 
-    # Nút Open file location
-    def open_folder():
-        if os.path.isdir(log_folder_path):
-            os.startfile(log_folder_path)
-        else:
-            messagebox.showerror("Lỗi", "Không tìm thấy thư mục log!")
+    # Label hiển thị đường dẫn thư mục
+    tk.Label(frame_controls, text=f"Thư mục Log: {log_folder_path}", anchor="w").pack(side="left", fill="x",
+                                                                                      expand=True)
 
-    tk.Button(frame_controls, text="Open file location", command=open_folder).pack(side="left")
-
-    # Nút Đóng (nằm cùng hàng ngang)
+    # Nút Đóng
     tk.Button(frame_controls, text="Close", command=log_dialog.destroy).pack(side="right")
 
     # Khung chứa Text widget và Scrollbar
@@ -175,7 +212,7 @@ def open_log_viewer(log_type):
 
 
 # =====================================
-# HÀM XỬ LÝ SỰ KIỆN UI
+# HÀM XỬ LÝ SỰ KIỆN UI CHÍNH (Giữ nguyên logic)
 # =====================================
 
 def ui_refresh_window_list():
@@ -198,10 +235,15 @@ def on_start_click():
     title = combo_window.get()
     x = entry_x.get()
     y = entry_y.get()
-    # Gửi giá trị cố định "0" cho radius (do đã bị loại bỏ khỏi UI nhưng controller cần tham số)
-    radius = "0"
     threshold = entry_threshold.get()
-    handle_start(title, x, y, radius, threshold)
+    a_str = entry_a.get()
+    # THAY ĐỔI: Lấy giá trị độ trễ
+    delay_str = entry_delay_after_click.get()
+    radius = "0"
+    is_five_points_mode = pixel_mode_var.get()
+
+    # THAY ĐỔI: Truyền giá trị độ trễ
+    handle_start(title, x, y, radius, threshold, a_str, delay_str, is_five_points_mode)
 
 
 def on_stop_click():
@@ -214,82 +256,149 @@ def on_pick_click():
     handle_pick_mode(combo_window.get())
 
 
-def on_tree_click(event):
-    """Đánh dấu chọn/bỏ chọn trong Treeview"""
-    global tree
-    row_id = tree.identify_row(event.y)
-    if not row_id:
-        return
+def on_pixel_mode_toggle():
+    """Xử lý khi nút chuyển đổi chế độ pixel được bấm"""
+    global pixel_mode_var
+    is_five_points = pixel_mode_var.get()
 
-    current = tree.set(row_id, "checkbox")
-    tree.set(row_id, "checkbox", "☑" if current == "☐" else "☐")
+    if is_five_points:
+        entry_a.config(state=tk.NORMAL)
+        status_text = "Chế độ: 5 điểm pixel được BẬT."
+    else:
+        entry_a.config(state=tk.DISABLED)
+        status_text = "Chế độ: 1 điểm pixel được BẬT."
+
+    update_status(status_text)
+    set_pixel_mode_on_off(is_five_points)
 
 
-def on_tree_double_click(event):
-    """Tải tọa độ từ mục đã double-click"""
-    global tree
-    row_id = tree.identify_row(event.y)
-    if not row_id:
-        return
+def ui_view_log_file():
+    """Nút xem chi tiết log"""
+    open_log_viewer('activity')
 
-    values = tree.item(row_id, "values")
-    if len(values) < 3:
-        return
 
-    _, window_title, coords, _ = values
-
-    combo_window.set(window_title)
-    on_window_selected()
-
+def ui_open_log_folder():
+    """Nút mở thư mục chứa log"""
+    _, log_folder_path = get_log_content_and_path('activity')
     try:
-        x, y = coords.split(",")
-        set_coordinate_entries(x.strip(), y.strip())
-        update_status(f"Tải lại tọa độ từ lịch sử: {window_title} ({coords})")
-    except Exception:
-        update_status("Lỗi khi đọc tọa độ từ lịch sử")
+        if os.path.isdir(log_folder_path):
+            os.startfile(log_folder_path)
+        else:
+            messagebox.showerror("Lỗi", "Không tìm thấy thư mục log!")
+    except Exception as e:
+        messagebox.showerror("Lỗi", f"Không thể mở thư mục: {e}")
 
 
-def ui_delete_selected_items():
-    """Xóa các mục đã chọn"""
-    global tree
-    selected_data = []
+# =====================================
+# HÀM XỬ LÝ THOÁT VÀ CHUYỂN CỬA SỔ
+# =====================================
 
-    for item in tree.get_children():
-        if tree.set(item, "checkbox") == "☑":
-            values = tree.item(item, "values")
-            if len(values) >= 3:
-                selected_data.append((values[0], values[1], values[2]))
+def go_to_start_screen(event=None):
+    """Chuyển về cửa sổ Start Screen"""
+    global main_app_window, start_screen
+    handle_stop()
 
-    success, msg = delete_selected_items(selected_data)
-    messagebox.showinfo("Thông báo", msg)
-
-
-def ui_delete_all_log():
-    """Xóa toàn bộ log"""
-    if messagebox.askyesno("Xác nhận", "Xóa toàn bộ log?"):
-        success, msg = delete_all_log()
-        messagebox.showinfo("Hoàn tất", msg)
+    if main_app_window:
+        main_app_window.withdraw()
+    if start_screen:
+        start_screen.deiconify()
 
 
-# HÀM ABOUT ĐÃ ĐƯỢC CẬP NHẬT ĐỂ CÓ THANH CUỘN, GIỚI HẠN CHIỀU CAO NỘI DUNG VÀ HIỂN THỊ NÚT ĐÓNG BÊN NGOÀI
+def quit_app():
+    """Thoát hẳn ứng dụng (dùng cho Start Screen)"""
+    global main_app_window, start_screen, root
+    handle_stop()
+    if main_app_window:
+        main_app_window.destroy()
+    if start_screen:
+        start_screen.destroy()
+    if root:
+        root.destroy()
+
+
+def ask_on_close():
+    """Hộp thoại xác nhận thoát tùy chỉnh (Cập nhật vị trí)"""
+
+    class CustomAskDialog(tk.Toplevel):
+        def __init__(self, parent):
+            super().__init__(parent)
+            self.title("Xác nhận Thoát")
+            ASK_WIDTH, ASK_HEIGHT = 400, 150
+
+            # Cập nhật vị trí
+            self.geometry(center_toplevel_on_parent(self, parent, ASK_WIDTH, ASK_HEIGHT))
+
+            self.resizable(False, False)
+            self.result = None
+
+            tk.Label(self, text="Bạn muốn làm gì?", font=("Segoe UI", 10, "bold")).pack(pady=10)
+
+            frame_buttons = tk.Frame(self)
+            frame_buttons.pack(pady=10, padx=10)
+
+            # Nút Về trang chính (Tương đương Yes)
+            tk.Button(frame_buttons, text="Về trang chính", command=self.on_yes, width=12).pack(side=tk.LEFT, padx=5)
+
+            # Nút Thoát ứng dụng (Tương đương No)
+            tk.Button(frame_buttons, text="Thoát ứng dụng", command=self.on_no, width=12).pack(side=tk.LEFT, padx=5)
+
+            # Nút Huỷ bỏ (Tương đương Cancel)
+            tk.Button(frame_buttons, text="Huỷ bỏ", command=self.on_cancel, width=12).pack(side=tk.LEFT, padx=5)
+
+            # Giữ cửa sổ con ở trên
+            self.transient(parent)
+            self.grab_set()
+            parent.wait_window(self)
+
+        def on_yes(self):
+            self.result = "yes"
+            self.destroy()
+
+        def on_no(self):
+            self.result = "no"
+            self.destroy()
+
+        def on_cancel(self):
+            self.result = "cancel"
+            self.destroy()
+
+    dialog = CustomAskDialog(main_app_window)
+    choice = dialog.result
+
+    if choice == "yes":
+        go_to_start_screen()
+    elif choice == "no":
+        quit_app()
+    # Nếu chọn cancel, không làm gì
+
+
+# =====================================
+# HÀM ABOUT (Cập nhật vị trí)
+# =====================================
+
 def show_about():
-    """Hiển thị cửa sổ About"""
+    """Hiển thị cửa sổ About (Cập nhật vị trí)"""
     global root
-    about = tk.Toplevel(root)
+
+    # Sử dụng main_app_window hoặc start_screen làm parent
+    parent = main_app_window if main_app_window and main_app_window.winfo_exists() else start_screen
+
+    about = tk.Toplevel(parent)
     about.title("About")
-    # Tăng chiều cao để chứa nội dung cuộn tốt hơn
-    about.geometry("450x300")
+
+    # Cập nhật vị trí
+    ABOUT_WIDTH, ABOUT_HEIGHT = 450, 300
+    about.geometry(center_toplevel_on_parent(about, parent, ABOUT_WIDTH, ABOUT_HEIGHT))
+
     about.resizable(False, False)
 
-    # Khung viền (Border is now the first thing packed into `about`)
+    # Khung viền (Border)
     border = tk.Frame(about, highlightbackground="black", highlightcolor="black",
                       highlightthickness=1, bd=0)
-    # Loại bỏ expand=True để nó không chiếm toàn bộ chiều cao, giải phóng không gian cho nút Đóng (đã bị loại bỏ)
-    border.pack(fill="both", padx=10, pady=10, expand=True)  # Dùng expand=True để canvas chiếm hết không gian
+    border.pack(fill="both", padx=10, pady=10, expand=True)
 
     # Khung chứa Canvas và Scrollbar
     frame_scroll_container = tk.Frame(border)
-    # Để frame_scroll_container expand bên trong border
     frame_scroll_container.pack(fill="both", expand=True)
 
     # 1. Tạo Canvas
@@ -322,7 +431,7 @@ def show_about():
     )
 
     # --- Nội dung About ---
-    title_text = "Auto Clicker v1.1.2\nTác giả: Kevin Quach\n"
+    title_text = "Auto Clicker v1.1.2\nTác giả: Kevin Quach\n"  # Giữ nguyên tác giả
     title_label = tk.Label(
         scroll_frame,
         text=title_text,
@@ -335,15 +444,17 @@ def show_about():
     separator = ttk.Separator(scroll_frame, orient="horizontal")
     separator.pack(fill="x", padx=10, pady=(0, 5))
 
-    # Thêm nhiều dòng hơn để kiểm tra thanh cuộn
+    # Cập nhật phần Body theo yêu cầu
     body_text = ("- Sửa lại vị trí lưu file log.\n"
                  "- Tối ưu hóa tốc độ theo dõi màu sắc (Chỉ xét 1 pixel).\n"
                  "- Cải thiện tính năng phát hiện thay đổi màu sắc.\n"
-                 "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi.\n"
+                 "- Thêm tính năng chọn ngưỡng khoảng cách màu thay đổi (Ngưỡng mặc định 5).\n"
+                 "- **Mới:** Thêm chế độ theo dõi 5 điểm pixel với Độ lệch A.\n"
                  "- Chặn hành vi thay đổi kích thước của cửa sổ làm việc.\n"
                  "- Thêm tính năng Hồi phục (Idle Timeout).\n"
                  "- Thêm Menu Diagnostics để xem Log.\n"
                  "- **Cập nhật:** Hộp thoại About đã có tính năng cuộn (scrollbar).\n"
+                 "- **Cập nhật:** Chế độ Start Screen và quản lý thoát ứng dụng linh hoạt.\n"
                  "---------------------------------------------------\n")
     body_label = tk.Label(scroll_frame, text=body_text, justify="left",
                           anchor="nw", wraplength=400, height=15)
@@ -351,29 +462,45 @@ def show_about():
 
 
 # =====================================
-# KHỞI TẠO UI
+# KHỞI TẠO CỬA SỔ CHÍNH (Cập nhật vị trí)
 # =====================================
 
-def start_ui():
-    """Khởi tạo và chạy giao diện chính"""
-    global root, combo_window, entry_x, entry_y, entry_radius, entry_threshold, status_label, tree
-    global color_canvas_before, color_hex_before, color_canvas_after, color_hex_after
+def create_main_app_window():
+    """Tạo cửa sổ ứng dụng chính"""
+    global main_app_window, combo_window, entry_x, entry_y, entry_threshold, entry_a, status_label
+    global color_canvas_before, color_hex_before, color_canvas_after, color_hex_after, activity_log_text
+    global pixel_mode_var, root, entry_delay_after_click
 
-    root = tk.Tk()
-    root.title("Auto Clicker")
-    root.geometry("450x700")
-    root.resizable(False, False)
-    root.config(padx=10, pady=10)
+    # Kích thước cố định của cửa sổ chính
+    MAIN_WIDTH, MAIN_HEIGHT = 450, 650
 
-    # KHỞI TẠO CONTROLLER
-    init_controller(update_status, update_color_labels, load_log_list, set_coordinate_entries)
+    if main_app_window:
+        main_app_window.deiconify()
+        # Nếu đã tạo, chỉ cần tải lại trạng thái cuối cùng
+        load_and_set_last_state()
+        return
+
+    main_app_window = tk.Toplevel(root)
+    main_app_window.title("Auto Clicker - Tự động câu cá")
+
+    # Cập nhật vị trí (Sát cạnh phải + 5% đệm, giữa dọc)
+    main_app_window.geometry(position_main_app_right_center(main_app_window, MAIN_WIDTH, MAIN_HEIGHT))
+
+    main_app_window.resizable(False, False)
+    main_app_window.config(padx=10, pady=10)
+
+    main_app_window.protocol("WM_DELETE_WINDOW", ask_on_close)
+
+    # KHỞI TẠO CONTROLLER (Cần gọi trước khi load_and_set_last_state)
+    init_controller(update_status, update_color_labels, load_log_list, set_coordinate_entries, on_pixel_mode_toggle)
 
     # Menu bar
-    menubar = tk.Menu(root)
+    menubar = tk.Menu(main_app_window)
 
     # Menu File
     menu_file = tk.Menu(menubar, tearoff=0)
-    menu_file.add_command(label="Thoát", command=root.destroy)
+    menu_file.add_command(label="Thoát về Trang chính", command=go_to_start_screen)
+    menu_file.add_command(label="Thoát ứng dụng", command=quit_app)
     menubar.add_cascade(label="File", menu=menu_file)
 
     # Menu Tools -> Diagnostics -> View Log
@@ -395,13 +522,13 @@ def start_ui():
     menu_about.add_command(label="About", command=show_about)
     menubar.add_cascade(label="About", menu=menu_about)
 
-    root.config(menu=menubar)
+    main_app_window.config(menu=menubar)
 
     # --- Phần chính của UI ---
 
-    tk.Label(root, text="Chọn cửa sổ mục tiêu:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    tk.Label(main_app_window, text="Chọn cửa sổ mục tiêu:", font=("Segoe UI", 10, "bold")).pack(anchor="w")
 
-    frame_winrow = tk.Frame(root)
+    frame_winrow = tk.Frame(main_app_window)
     frame_winrow.pack(fill="x", pady=5)
 
     combo_window = ttk.Combobox(frame_winrow, state="readonly")
@@ -411,29 +538,72 @@ def start_ui():
     tk.Button(frame_winrow, text="Làm mới", command=ui_refresh_window_list, width=10) \
         .pack(side="left", padx=5)
 
-    tk.Label(root, text="Tọa độ tương đối X:").pack(anchor="w")
-    entry_x = tk.Entry(root)
-    entry_x.pack(fill="x", pady=2)
+    # DÒNG CHỨA X VÀ Y
+    frame_coords = tk.Frame(main_app_window)
+    frame_coords.pack(fill="x", pady=5)
 
-    tk.Label(root, text="Tọa độ tương đối Y:").pack(anchor="w")
-    entry_y = tk.Entry(root)
-    entry_y.pack(fill="x", pady=2)
+    tk.Label(frame_coords, text="Tọa độ tương đối X:").pack(side="left", anchor="w", expand=True)
+    tk.Label(frame_coords, text="Tọa độ tương đối Y:").pack(side="left", anchor="w", expand=True, padx=(10, 0))
 
-    # KHUNG CHỨA NGƯỠNG MÀU
-    frame_params = tk.Frame(root)
+    frame_entry_coords = tk.Frame(main_app_window)
+    frame_entry_coords.pack(fill="x")
+
+    entry_x = tk.Entry(frame_entry_coords)
+    entry_x.pack(side="left", fill="x", expand=True, pady=2)
+
+    entry_y = tk.Entry(frame_entry_coords)
+    entry_y.pack(side="left", fill="x", expand=True, pady=2, padx=(10, 0))
+
+    # THAY ĐỔI: DÒNG CHỨA THRESHOLD, ĐỘ LỆCH A VÀ ĐỘ TRỄ SAU CLICK
+    frame_params = tk.Frame(main_app_window)
     frame_params.pack(fill="x", pady=5)
 
-    frame_threshold = tk.Frame(frame_params)
-    frame_threshold.pack(side=tk.LEFT, fill="x", expand=True)
+    # Label cho Ngưỡng (Threshold)
+    tk.Label(frame_params, text="Ngưỡng KC màu:").pack(side="left", anchor="w", expand=True)
+    # Label cho Độ lệch A
+    tk.Label(frame_params, text="Độ lệch pixel A:").pack(side="left", anchor="w", expand=True, padx=(10, 0))
+    # Label MỚI cho Độ trễ sau click
+    tk.Label(frame_params, text="Độ trễ sau Click (s):").pack(side="left", anchor="w", expand=True, padx=(10, 0))
 
-    tk.Label(frame_threshold, text="Ngưỡng khoảng cách màu:").pack(anchor="w")
-    entry_threshold = tk.Entry(frame_threshold, width=5)
-    entry_threshold.insert(0, "10")
-    entry_threshold.pack(pady=2, anchor="w", fill="x")
+    frame_entry_params = tk.Frame(main_app_window)
+    frame_entry_params.pack(fill="x")
 
-    tk.Button(root, text="Chọn vị trí (Ctrl + F10)", command=on_pick_click).pack(pady=5, fill="x")
+    # Entry Ngưỡng (Threshold)
+    entry_threshold = tk.Entry(frame_entry_params)
+    entry_threshold.insert(0, "5")
+    entry_threshold.pack(side="left", fill="x", expand=True, pady=2)
 
-    frame_buttons = tk.Frame(root)
+    # Entry Độ lệch A
+    entry_a = tk.Entry(frame_entry_params)
+    entry_a.insert(0, "5")
+    entry_a.pack(side="left", fill="x", expand=True, pady=2, padx=(10, 0))
+    entry_a.config(state=tk.DISABLED)
+
+    # Entry MỚI Độ trễ sau Click
+    entry_delay_after_click = tk.Entry(frame_entry_params)
+    entry_delay_after_click.insert(0, "7")  # Giá trị mặc định là 7 giây
+    entry_delay_after_click.pack(side="left", fill="x", expand=True, pady=2, padx=(10, 0))
+
+    # Toggle Button cho chế độ 1/5 điểm
+    pixel_mode_var = tk.BooleanVar()
+    pixel_mode_var.set(False)
+
+    frame_pixel_mode = tk.Frame(main_app_window)
+    frame_pixel_mode.pack(fill="x", pady=5)
+
+    tk.Label(frame_pixel_mode, text="Chế độ theo dõi:", font=("Segoe UI", 9)).pack(side=tk.LEFT, anchor="w")
+
+    rb_one = tk.Radiobutton(frame_pixel_mode, text="1 điểm", variable=pixel_mode_var, value=False,
+                            command=on_pixel_mode_toggle)
+    rb_one.pack(side=tk.LEFT, padx=10)
+
+    rb_five = tk.Radiobutton(frame_pixel_mode, text="5 điểm (với A)", variable=pixel_mode_var, value=True,
+                             command=on_pixel_mode_toggle)
+    rb_five.pack(side=tk.LEFT)
+
+    tk.Button(main_app_window, text="Chọn vị trí (Ctrl + F10)", command=on_pick_click).pack(pady=5, fill="x")
+
+    frame_buttons = tk.Frame(main_app_window)
     frame_buttons.pack(pady=5, fill="x")
 
     btn_start = tk.Button(frame_buttons, text="Bắt đầu (F11)", command=on_start_click, bg="#9fdb9f", width=15)
@@ -443,11 +613,11 @@ def start_ui():
     btn_stop.pack(side="left", padx=5, expand=True, fill="x")
 
     # TRẠNG THÁI
-    status_label = tk.Label(root, text="Auto Clicker tạm dừng", anchor="w")
+    status_label = tk.Label(main_app_window, text="Auto Clicker tạm dừng (Chế độ 1 điểm)", anchor="w", relief=tk.SUNKEN)
     status_label.pack(fill="x", pady=(5, 0))
 
     # PHẦN HIỂN THỊ MÀU
-    frame_colors = tk.Frame(root)
+    frame_colors = tk.Frame(main_app_window)
     frame_colors.pack(fill="x", pady=(5, 5))
 
     frame_before = tk.Frame(frame_colors)
@@ -474,47 +644,102 @@ def start_ui():
     color_hex_after.config(state=tk.DISABLED, relief=tk.FLAT)
     color_hex_after.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
-    tk.Label(root, text="Lịch sử tọa độ:", font=("Segoe UI", 10, "bold")).pack(pady=(5, 0), anchor="w")
+    # LỊCH SỬ HOẠT ĐỘNG (Activity Log)
+    tk.Label(main_app_window, text="Lịch sử hoạt động (Phiên hiện tại):", font=("Segoe UI", 10, "bold")).pack(
+        pady=(5, 0), anchor="w")
 
-    frame_tree = tk.Frame(root)
-    frame_tree.pack(fill="both", expand=True, padx=5, pady=5)
+    frame_log = tk.Frame(main_app_window)
+    frame_log.pack(fill="both", expand=True, padx=5, pady=5)
 
-    columns = ("time", "window", "coords", "checkbox")
-    tree = ttk.Treeview(frame_tree, columns=columns, show="headings", selectmode="browse")
-    tree.heading("time", text="Thời gian")
-    tree.heading("window", text="Cửa sổ")
-    tree.heading("coords", text="Tọa độ (rel)")
-    tree.heading("checkbox", text="Chọn")
+    # Đổi sang sử dụng font Segoe UI
+    activity_log_text = tk.Text(frame_log, wrap=tk.WORD, height=8, state=tk.DISABLED, font=("Segoe UI", 9))
 
-    tree.column("time", width=120, anchor="center")
-    tree.column("window", width=150, anchor="center")
-    tree.column("coords", width=100, anchor="center")
-    tree.column("checkbox", width=50, anchor="center")
+    log_scrollbar = ttk.Scrollbar(frame_log, orient="vertical", command=activity_log_text.yview)
+    log_scrollbar.pack(side="right", fill="y")
+    activity_log_text.config(yscrollcommand=log_scrollbar.set)
+    activity_log_text.pack(side="left", fill="both", expand=True)
 
-    tree.pack(side="left", fill="both", expand=True)
+    # Nút mới: Xem chi tiết log & Mở thư mục
+    frame_log_buttons = tk.Frame(main_app_window)
+    frame_log_buttons.pack(pady=5, fill="x")
 
-    scrollbar = ttk.Scrollbar(frame_tree, orient="vertical", command=tree.yview)
-    scrollbar.pack(side="right", fill="y")
-    tree.configure(yscrollcommand=scrollbar.set)
+    btn_view_detail = tk.Button(frame_log_buttons, text="Xem chi tiết log", command=ui_view_log_file, bg="#cce0ff")
+    btn_view_detail.pack(side="left", expand=True, fill="x", padx=5)
 
-    tree.bind("<Button-1>", on_tree_click)
-    tree.bind("<Double-1>", on_tree_double_click)
+    btn_open_folder = tk.Button(frame_log_buttons, text="Mở thư mục", command=ui_open_log_folder, bg="#fff0cc")
+    btn_open_folder.pack(side="left", expand=True, fill="x", padx=5)
 
-    frame_delete = tk.Frame(root)
-    frame_delete.pack(pady=5, fill="x")
+    # THAY ĐỔI HOTKEY
+    keyboard.add_hotkey('F9', on_pick_click)
+    keyboard.add_hotkey('f10', on_start_click)
+    keyboard.add_hotkey('f11', on_stop_click)
 
-    btn_delete_selected = tk.Button(frame_delete, text="Xóa mục đã chọn", bg="#f08080",
-                                    command=ui_delete_selected_items)
-    btn_delete_selected.pack(side="left", expand=True, fill="x", padx=5)
-
-    btn_delete_all = tk.Button(frame_delete, text="Xóa toàn bộ log", bg="#f08080", command=ui_delete_all_log)
-    btn_delete_all.pack(side="left", expand=True, fill="x", padx=5)
-
-    keyboard.add_hotkey('ctrl+f10', on_pick_click)
-    keyboard.add_hotkey('f11', on_start_click)
-    keyboard.add_hotkey('f12', on_stop_click)
-
+    # Load danh sách cửa sổ
     ui_refresh_window_list()
-    load_log_list()
 
+    # TẢI TRẠNG THÁI CUỐI CÙNG
+    load_and_set_last_state()
+
+
+def load_and_set_last_state():
+    """Tải và cập nhật trạng thái cuối cùng vào UI"""
+    last_state = load_last_known_state()
+    if last_state:
+        last_title, last_x, last_y = last_state
+        set_window_entry(last_title)
+        set_coordinate_entries(last_x, last_y)
+        update_status(f"Đã tải trạng thái cuối cùng: {last_title} ({last_x},{last_y})")
+
+
+# =====================================
+# KHỞI TẠO CỬA SỔ START (Đã loại bỏ Menubar)
+# =====================================
+
+def start_main_app_mode(mode_name):
+    """Xử lý nút Start Screen để mở ứng dụng chính"""
+    global start_screen
+
+    if start_screen:
+        start_screen.withdraw()
+
+    if mode_name == "fishing":
+        create_main_app_window()
+        handle_stop()
+
+
+def create_start_screen():
+    """Tạo cửa sổ khởi động (Đã loại bỏ Menubar)"""
+    global root, start_screen
+
+    root = tk.Tk()
+    root.withdraw()
+
+    start_screen = tk.Toplevel(root)
+    start_screen.title("Auto Clicker - Select Mode")
+
+    # Kích thước cố định của Start Screen
+    START_WIDTH, START_HEIGHT = 300, 200
+
+    # Cập nhật vị trí (Căn giữa màn hình)
+    start_screen.geometry(center_window_on_screen(start_screen, START_WIDTH, START_HEIGHT))
+
+    start_screen.resizable(False, False)
+    start_screen.config(padx=20, pady=20)
+
+    start_screen.protocol("WM_DELETE_WINDOW", quit_app)  # Dùng quit_app để thoát hẳn
+
+    # --- KHÔNG CÒN MENUBAR CHO START SCREEN ---
+
+    tk.Label(start_screen, text="Chọn Chế độ:", font=("Segoe UI", 12, "bold")).pack(pady=10)
+
+    tk.Button(start_screen,
+              text="🎣 Tự động câu cá",
+              command=lambda: start_main_app_mode("fishing"),
+              font=("Segoe UI", 10, "bold"),
+              bg="#ccffcc").pack(fill="x", pady=5)
+
+
+def start_main_app():
+    """Khởi tạo và chạy ứng dụng chính"""
+    create_start_screen()
     root.mainloop()

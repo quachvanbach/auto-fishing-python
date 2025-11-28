@@ -15,6 +15,10 @@ def rgb_to_hex(rgb):
     """Chuyển đổi RGB tuple sang mã HEX (ví dụ: (255, 0, 0) -> #FF0000)"""
     if rgb is None:
         return "#XXXXXX"
+    # Kiểm tra nếu rgb không phải tuple hợp lệ
+    if not isinstance(rgb, tuple) or len(rgb) < 3:
+        return "#XXXXXX"
+
     return '#{:02x}{:02x}{:02x}'.format(rgb[0], rgb[1], rgb[2]).upper()
 
 
@@ -41,7 +45,7 @@ def tinh_khoang_cach_weighted_rgb(hex1, hex2):
     # Công thức khoảng cách có trọng số: sqrt(w_r*dr^2 + w_g*dg^2 + w_b*db^2)
     distance = np.sqrt(np.sum(weights * diff ** 2))
 
-    # Chia cho 9 (tổng trọng số) để chuẩn hóa (tùy chọn)
+    # Chia cho 9 (tổng trọng số) để chuẩn hóa
     return float(distance / 9.0)
 
 
@@ -57,3 +61,27 @@ def get_single_pixel_color(abs_x, abs_y):
     except Exception as e:
         # Xử lý lỗi nếu việc đọc pixel thất bại
         return (0, 0, 0)
+
+
+# HÀM MỚI: Lấy 5 màu pixel
+def get_multi_pixel_colors(center_x, center_y, a):
+    """
+    Trả về màu RGB của 5 pixel: trung tâm, (x+a, y), (x-a, y), (x, y+a), (x, y-a).
+    a là độ lệch.
+    """
+    points = [
+        (center_x, center_y),  # Center
+        (center_x + a, center_y),  # Right
+        (center_x - a, center_y),  # Left
+        (center_x, center_y + a),  # Down
+        (center_x, center_y - a)  # Up
+    ]
+
+    colors = []
+
+    for x, y in points:
+        # Đảm bảo tọa độ nằm trong màn hình
+        clamped_x, clamped_y = clamp_coords(x, y)
+        colors.append(get_single_pixel_color(clamped_x, clamped_y))
+
+    return colors

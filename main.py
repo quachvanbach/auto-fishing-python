@@ -1,4 +1,4 @@
-from ui import start_ui
+from ui import start_main_app
 
 if __name__ == "__main__":
-    start_ui()
+    start_main_app()

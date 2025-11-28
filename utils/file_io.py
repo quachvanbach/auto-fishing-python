@@ -44,8 +44,8 @@ def log_activity(message):
         with open(ACTIVITY_FILE, 'a', encoding='utf-8') as f:
             f.write(log_entry + '\n')
 
-        # Vẫn in ra console
-        print(log_entry)
+        # KHÔNG in ra console nữa, thay bằng callback UI để chỉ hiển thị trong UI (nếu cần in, phải dùng print)
+        # print(log_entry)
 
     except Exception as e:
         print(f"LỖI HỆ THỐNG (Không ghi được activity.log): {e}")
@@ -64,7 +64,8 @@ def save_position_to_log(window_title, rel_x, rel_y):
         is_duplicate = False
         if all_rows:
             last_row = all_rows[-1]
-            if last_row[1] == window_title and last_row[2] == str(rel_x) and last_row[3] == str(rel_y):
+            # Kiểm tra nếu dòng cuối cùng khớp với tọa độ/cửa sổ hiện tại
+            if len(last_row) >= 4 and last_row[1] == window_title and last_row[2] == str(rel_x) and last_row[3] == str(rel_y):
                 is_duplicate = True
 
         if is_duplicate:
@@ -97,7 +98,7 @@ def load_log_data():
 
 
 def overwrite_log_data(rows):
-    """Ghi đè toàn bộ dữ liệu log vị trí"""
+    """Ghi đè toàn bộ dữ liệu log vị trí (Giữ nguyên logic file io)"""
     try:
         with open(POSITIONS_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -109,7 +110,7 @@ def overwrite_log_data(rows):
 
 
 def clear_log_file():
-    """Xóa toàn bộ nội dung file positions.log"""
+    """Xóa toàn bộ nội dung file positions.log (Giữ nguyên logic file io)"""
     try:
         with open(POSITIONS_FILE, 'w', newline='', encoding='utf-8') as f:
             pass
