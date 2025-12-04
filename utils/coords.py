@@ -1,3 +1,4 @@
+#coord.py
 import pyautogui
 import numpy as np
 

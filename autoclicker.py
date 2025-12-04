@@ -1,3 +1,4 @@
+#autoclicker.py
 import pyautogui
 import threading
 import time
@@ -12,6 +13,7 @@ import numpy as np
 
 # Biến toàn cục để kiểm soát
 running = False
+current_mode = "FISHING" # BIẾN MỚI: Theo dõi chế độ hiện tại
 selected_window = None  # Tên cửa sổ (string)
 selected_window_rect = None  # (left, top, width, height)
 status_callback = None
@@ -52,7 +54,7 @@ def update_status(text, color=None):
 
 
 # =====================================
-# HÀM THEO DÕI & CLICK
+# HÀM DỪNG LUỒNG AN TOÀN (CHUNG)
 # =====================================
 def sleep_may_stop(seconds):
     """Dừng luồng an toàn, kiểm tra biến 'running'"""
@@ -65,6 +67,98 @@ def sleep_may_stop(seconds):
         time.sleep(0.01)  # TỐI ƯU
     return True
 
+# =====================================
+# HÀM CLICK THEO THỜI GIAN (CRUSH ROCKS)
+# =====================================
+
+def timer_click_loop(rel_x, rel_y, window_title, interval_seconds):
+    """Luồng thực hiện click chuột theo chu kỳ thời gian cố định."""
+    global running, selected_window_rect
+
+    try:
+        rel_x = int(rel_x)
+        rel_y = int(rel_y)
+        interval_seconds = float(interval_seconds)
+        if interval_seconds <= 0.01:
+            raise ValueError
+    except Exception:
+        update_status("Lỗi: Thời gian A (chu kỳ) phải là số thực dương (> 0.01s)!", "#ff0000")
+        log_activity("LỖI KHỞI TẠO TIMER CLICK: Chu kỳ không hợp lệ.")
+        running = False
+        return
+
+    update_status(f"TIMER CLICK MODE: Đang chờ click lần đầu sau {interval_seconds:.2f}s...", "#ffffcc")
+
+    while running:
+        # Cố gắng lấy cửa sổ (Chỉ cần để log, không cần tọa độ trong vòng lặp)
+        try:
+            win = gw.getWindowsWithTitle(window_title)[0]
+            win_left, win_top = win.left, win.top
+            selected_window_rect = (win.left, win.top, win.width, win.height)
+            selected_window = window_title
+        except Exception:
+            update_status("Cửa sổ bị đóng hoặc đổi tên!", "#ff0000")
+            log_activity(f"DỪNG TIMER CLICK: Cửa sổ '{window_title}' không được tìm thấy.")
+            running = False
+            break
+
+        abs_x = win_left + rel_x
+        abs_y = win_top + rel_y
+        abs_x, abs_y = clamp_coords(abs_x, abs_y)
+
+        # Ngủ theo chu kỳ
+        if not sleep_may_stop(interval_seconds):
+            log_activity("TIMER CLICK MODE: Dừng trong khi chờ chu kỳ.")
+            break
+
+        # Thực hiện click
+        try:
+            pyautogui.click(abs_x, abs_y)
+            update_status(f"TIMER CLICK MODE: Click tại ({abs_x}, {abs_y}). Chu kỳ tiếp: {interval_seconds:.2f}s", "#ccffcc")
+            log_activity(f"TIMER CLICK: Click tại ({abs_x}, {abs_y}) thành công.")
+        except Exception as e:
+            update_status("TIMER CLICK MODE: Lỗi Click!", "#ff0000")
+            log_activity(f"LỖI TIMER CLICK: Click thất bại: {e}")
+
+
+# =====================================
+# HÀM NHẤN PHÍM THEO THỜI GIAN (HARVEST MODE)
+# =====================================
+
+def timer_key_press_loop(interval_seconds):
+    """Luồng thực hiện nhấn phím 'e' theo chu kỳ thời gian cố định."""
+    global running
+
+    try:
+        interval_seconds = float(interval_seconds)
+        if interval_seconds <= 0.01:
+            raise ValueError
+    except Exception:
+        update_status("Lỗi: Thời gian nghỉ (chu kỳ) phải là số thực dương (> 0.01s)!", "#ff0000")
+        log_activity("LỖI KHỞI TẠO TIMER KEY PRESS: Chu kỳ không hợp lệ.")
+        running = False
+        return
+
+    update_status(f"TIMER KEY PRESS MODE: Đang chờ nhấn phím lần đầu sau {interval_seconds:.2f}s...", "#ffffcc")
+
+    while running:
+        # Ngủ theo chu kỳ
+        if not sleep_may_stop(interval_seconds):
+            log_activity("TIMER KEY PRESS MODE: Dừng trong khi chờ chu kỳ.")
+            break
+
+        # Thực hiện nhấn phím 'e'
+        try:
+            keyboard.press_and_release('e')
+            update_status(f"TIMER KEY PRESS MODE: Đã nhấn phím 'E'. Chu kỳ tiếp: {interval_seconds:.2f}s", "#ccffcc")
+            log_activity(f"TIMER KEY PRESS: Nhấn phím 'e' thành công.")
+        except Exception as e:
+            update_status("TIMER KEY PRESS MODE: Lỗi nhấn phím!", "#ff0000")
+            log_activity(f"LỖI TIMER KEY PRESS: Nhấn phím 'e' thất bại: {e}")
+
+# =====================================
+# HÀM THEO DÕI & CLICK (FISHING MODE - Giữ nguyên)
+# =====================================
 
 # CẬP NHẬT THAM SỐ: Thêm 'delay'
 def watch_pixel(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_mode):
@@ -324,39 +418,58 @@ def watch_pixel(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_
 # HÀM BÊN NGOÀI (CẦN EXPORT CHO CONTROLLER)
 # =====================================
 
-# CẬP NHẬT THAM SỐ: Thêm 'delay'
-def start_watching(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_mode):
-    """Bắt đầu luồng theo dõi pixel và click"""
-    global running, last_action_time, selected_window
+# CẬP NHẬT THAM SỐ: Thêm 'mode' và 'key_interval'
+def start_watching(rel_x=0, rel_y=0, window_title="", mode="FISHING", threshold=0, a=0, delay=0, interval=0, key_interval=0.5):
+    """Bắt đầu luồng theo dõi pixel/click/nhấn phím"""
+    global running, last_action_time, selected_window, current_mode
 
-    if not window_title:
+    # CHẾ ĐỘ HARVEST KHÔNG CẦN CỬA SỔ
+    if mode != "HARVEST" and not window_title:
         update_status("Lỗi: Chưa chọn cửa sổ mục tiêu!", "#ffcccc")
         return
 
-    # Gán tên cửa sổ trước khi bắt đầu
+    # Gán tên cửa sổ và chế độ trước khi bắt đầu
     selected_window = window_title
+    current_mode = mode
 
     running = True
     last_action_time = time.time()  # Reset thời gian khi bắt đầu
 
-    # CHỈ CẬP NHẬT TRẠNG THÁI (và log) 1 LẦN KHI START
-    current_mode_text = '5 điểm' if is_five_points_mode else '1 điểm'
-    log_activity(
-        f"START theo dõi. Cửa sổ: {window_title}, Tọa độ: ({rel_x},{rel_y}), Ngưỡng: {threshold}, Độ trễ: {delay}s, Chế độ: {current_mode_text}")
-    update_status(f"Auto đang bật ({current_mode_text}) | Ngưỡng: {threshold} | Trễ: {delay}s", "#ccffcc")
+    # Cập nhật trạng thái và log dựa trên chế độ
+    if mode == "FISHING":
+        current_mode_text = '5 điểm' if is_five_points_mode else '1 điểm'
+        log_activity(
+            f"START (FISHING). Cửa sổ: {window_title}, Tọa độ: ({rel_x},{rel_y}), Ngưỡng: {threshold}, Độ trễ: {delay}s, Chế độ: {current_mode_text}")
+        update_status(f"Auto Câu Cá đang bật ({current_mode_text}) | Ngưỡng: {threshold} | Trễ: {delay}s", "#ccffcc")
 
-    # TRUYỀN THAM SỐ VÀO LUỒNG
-    # THAY ĐỔI: Truyền tham số delay vào watch_pixel
-    threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_mode),
-                     daemon=True).start()
+        # CHUYỂN SANG HÀM GỐC watch_pixel
+        threading.Thread(target=watch_pixel, args=(rel_x, rel_y, window_title, threshold, a, delay, is_five_points_mode),
+                         daemon=True).start()
+
+    elif mode == "CRUSH_ROCKS":
+        log_activity(
+            f"START (CRUSH ROCKS). Cửa sổ: {window_title}, Tọa độ: ({rel_x},{rel_y}), Chu kỳ: {interval}s")
+        update_status(f"Auto Đập Đá đang bật | Chu kỳ: {interval}s", "#ccffcc")
+
+        # CHUYỂN SANG HÀM MỚI timer_click_loop
+        threading.Thread(target=timer_click_loop, args=(rel_x, rel_y, window_title, interval),
+                         daemon=True).start()
+
+    elif mode == "HARVEST":
+        log_activity(f"START (HARVEST). Chu kỳ nhấn phím 'e': {key_interval}s")
+        update_status(f"Auto Thu Hoạch đang bật | Chu kỳ: {key_interval}s", "#ccffcc")
+
+        # CHUYỂN SANG HÀM MỚI timer_key_press_loop
+        threading.Thread(target=timer_key_press_loop, args=(key_interval,),
+                         daemon=True).start()
 
 
 def stop_watching():
     """Dừng luồng theo dõi"""
-    global running
+    global running, current_mode
     if running:
         running = False
-        log_activity("STOP: Auto Clicker đã dừng.")
+        log_activity(f"STOP ({current_mode}): Auto Clicker đã dừng.")
         update_status("Auto Clicker tạm dừng", "")  # Màu nền mặc định
 
 
